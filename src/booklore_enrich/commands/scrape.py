@@ -24,12 +24,20 @@ def sync_books_to_cache(db: Database, booklore_books: List[Dict[str, Any]]) -> i
     """Sync BookLore book list into the local SQLite cache."""
     count = 0
     for book in booklore_books:
-        authors = book.get("authors", [])
-        author = authors[0]["name"] if authors else "Unknown"
-        isbn = book.get("isbn13", book.get("isbn", book.get("isbn10")))
+        # BookLore nests book info under "metadata"; fall back to top-level for tests
+        meta = book.get("metadata", book)
+        authors = meta.get("authors", [])
+        # Authors can be strings or dicts with a "name" key
+        if authors and isinstance(authors[0], dict):
+            author = authors[0]["name"]
+        elif authors:
+            author = authors[0]
+        else:
+            author = "Unknown"
+        isbn = meta.get("isbn13", meta.get("isbn", meta.get("isbn10")))
         db.upsert_book(
             booklore_id=book["id"],
-            title=book.get("title", ""),
+            title=meta.get("title", ""),
             author=author,
             isbn=isbn,
         )

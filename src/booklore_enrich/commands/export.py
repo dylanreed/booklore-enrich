@@ -32,22 +32,30 @@ def books_to_goodreads_csv(books: List[Dict[str, Any]]) -> str:
     writer.writeheader()
 
     for book in books:
-        authors = book.get("authors", [])
-        primary_author = authors[0]["name"] if authors else ""
-        additional = (
-            ", ".join(a["name"] for a in authors[1:]) if len(authors) > 1 else ""
-        )
+        # BookLore nests book info under "metadata"; fall back to top-level for tests
+        meta = book.get("metadata", book)
+        authors = meta.get("authors", [])
+        # Authors can be strings or dicts with a "name" key
+        if authors and isinstance(authors[0], dict):
+            primary_author = authors[0]["name"]
+            additional = ", ".join(a["name"] for a in authors[1:]) if len(authors) > 1 else ""
+        elif authors:
+            primary_author = authors[0]
+            additional = ", ".join(authors[1:]) if len(authors) > 1 else ""
+        else:
+            primary_author = ""
+            additional = ""
 
         writer.writerow(
             {
-                "Title": book.get("title", ""),
+                "Title": meta.get("title", ""),
                 "Author": primary_author,
                 "Additional Authors": additional,
-                "ISBN": book.get("isbn10", book.get("isbn", "")),
-                "ISBN13": book.get("isbn13", book.get("isbn", "")),
-                "Publisher": book.get("publisher", ""),
-                "Year Published": book.get("publishedDate", ""),
-                "Number of Pages": book.get("pageCount", ""),
+                "ISBN": meta.get("isbn10", meta.get("isbn", "")),
+                "ISBN13": meta.get("isbn13", meta.get("isbn", "")),
+                "Publisher": meta.get("publisher", ""),
+                "Year Published": meta.get("publishedDate", ""),
+                "Number of Pages": meta.get("pageCount", ""),
                 "Bookshelves": "",
             }
         )

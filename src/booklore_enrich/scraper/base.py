@@ -5,6 +5,7 @@ import asyncio
 import re
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 
 
 def slugify(title: str, author: str) -> str:
@@ -45,10 +46,15 @@ def parse_book_page(html: str) -> Dict[str, Any]:
     tag_pattern = r'href="/topics/(?:best|most)/([^/"]+)/\d+"'
     tag_matches = re.findall(tag_pattern, html)
     for tag_match in tag_matches:
-        # Split comma-separated tropes in URL
+        # Split comma-separated tropes and URL-decode them
         for tag in tag_match.split(","):
-            tag = tag.strip()
-            if tag and tag not in data["tags"]:
+            tag = unquote(tag).strip()
+            # Convert spaces to hyphens for consistency
+            tag = tag.replace(" ", "-").lower()
+            # Skip template variables and junk
+            if not tag or "{" in tag or "}" in tag or tag == "all":
+                continue
+            if tag not in data["tags"]:
                 data["tags"].append(tag)
 
     # Extract steam level from steam rating indicators
