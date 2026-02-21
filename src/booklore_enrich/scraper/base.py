@@ -135,7 +135,6 @@ class BrowserScraper:
         self, base_url: str, title: str, author: str
     ) -> Optional[Dict[str, str]]:
         """Search for a book on romance.io/booknaut and return the best match."""
-        # Use the site's search page with a query parameter
         query = f"{title} {author}"
         search_url = f"{base_url}/search?q={query}"
         try:
@@ -143,20 +142,16 @@ class BrowserScraper:
             results = parse_search_results(html)
             if results:
                 return results[0]
-        except Exception:
-            pass
 
-        # Fallback: try the similar-books page with interactive search
-        try:
-            fallback_url = f"{base_url}/books/similar"
-            html = await self.fetch_page(fallback_url)
-            await self._page.fill('input[type="text"]', query)
-            await self._page.keyboard.press("Enter")
-            await self._page.wait_for_timeout(5000)
-            html = await self._page.content()
-            results = parse_search_results(html)
-            if results:
-                return results[0]
+            # Search results load via AJAX — wait for book links to appear
+            try:
+                await self._page.wait_for_selector('a[href*="/books/"]', timeout=10000)
+                html = await self._page.content()
+                results = parse_search_results(html)
+                if results:
+                    return results[0]
+            except Exception:
+                pass
         except Exception:
             pass
 
