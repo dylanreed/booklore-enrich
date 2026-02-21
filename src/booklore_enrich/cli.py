@@ -30,18 +30,29 @@ def export(output, username):
 
 
 @cli.command()
-def scrape():
+@click.option("--source", "-s", type=click.Choice(["romance.io", "booknaut", "all"]),
+              default="all", help="Which source to scrape.")
+@click.option("--limit", "-l", type=int, default=0, help="Max books to scrape per source (0=all).")
+def scrape(source, limit):
     """Scrape trope/heat metadata from romance.io and thebooknaut.com."""
-    click.echo("Scrape not yet implemented.")
+    from booklore_enrich.commands.scrape import run_scrape
+    run_scrape(source, limit)
 
 
 @cli.command()
-def tag():
+@click.option("--dry-run", is_flag=True, help="Preview changes without applying.")
+def tag(dry_run):
     """Push enriched metadata as tags and shelves into BookLore."""
-    click.echo("Tag not yet implemented.")
+    from booklore_enrich.commands.tag import run_tag
+    run_tag(dry_run)
 
 
 @cli.command()
-def discover():
+@click.option("--source", "-s", type=click.Choice(["romance.io", "booknaut", "all"]),
+              default="all", help="Which source to check.")
+@click.option("--genre", "-g", type=click.Choice(["romance", "sci-fi", "fantasy"]),
+              default=None, help="Filter by genre.")
+def discover(source, genre):
     """Discover new books by trope from romance.io and thebooknaut.com."""
-    click.echo("Discover not yet implemented.")
+    from booklore_enrich.commands.discover import run_discover
+    run_discover(source, genre)
