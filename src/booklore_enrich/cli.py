@@ -2,8 +2,11 @@
 # ABOUTME: Defines the main CLI group and registers subcommands.
 
 import click
+from dotenv import load_dotenv
 
 from booklore_enrich.config import load_config, save_config
+
+load_dotenv()
 
 
 @click.group()
