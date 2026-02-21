@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from booklore_enrich.config import Config, load_config, save_config, DEFAULT_CONFIG
+from booklore_enrich.config import Config, load_config, save_config, get_password, DEFAULT_CONFIG
 
 
 def test_default_config_has_required_sections():
@@ -55,3 +55,13 @@ def test_save_config_creates_file(tmp_path):
     loaded = load_config(config_file)
     assert loaded.booklore_url == "http://mynas:6060"
     assert loaded.booklore_username == "dylan"
+
+
+def test_get_password_from_env(monkeypatch):
+    monkeypatch.setenv("BOOKLORE_PASSWORD", "secret123")
+    assert get_password() == "secret123"
+
+
+def test_get_password_env_takes_priority(monkeypatch):
+    monkeypatch.setenv("BOOKLORE_PASSWORD", "from-env")
+    assert get_password() == "from-env"

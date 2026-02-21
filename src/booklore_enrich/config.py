@@ -1,9 +1,10 @@
 # ABOUTME: Configuration management for booklore-enrich.
 # ABOUTME: Loads/saves TOML config files with sensible defaults.
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 try:
     import tomllib
@@ -97,3 +98,12 @@ def save_config(config: Config, path: Path = DEFAULT_CONFIG_PATH) -> None:
     }
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
+
+
+def get_password() -> Optional[str]:
+    """Get BookLore password from BOOKLORE_PASSWORD env var or interactive prompt."""
+    password = os.environ.get("BOOKLORE_PASSWORD")
+    if password:
+        return password
+    import click
+    return click.prompt("BookLore password", hide_input=True)

@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 import click
 from rich.console import Console
 
-from booklore_enrich.config import load_config, save_config
+from booklore_enrich.config import load_config, save_config, get_password
 
 console = Console()
 
@@ -69,7 +69,7 @@ def run_export(output_path: str):
         )
         return
 
-    password = click.prompt("BookLore password", hide_input=True)
+    password = get_password()
 
     client = BookLoreClient(config.booklore_url)
     try:

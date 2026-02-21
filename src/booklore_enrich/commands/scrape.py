@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.progress import Progress
 
 from booklore_enrich.booklore_client import BookLoreClient
-from booklore_enrich.config import load_config
+from booklore_enrich.config import load_config, get_password
 from booklore_enrich.db import Database
 
 console = Console()
@@ -99,7 +99,7 @@ def run_scrape(source: str, limit: int):
         console.print("[red]No BookLore username configured.[/red]")
         return
 
-    password = click.prompt("BookLore password", hide_input=True)
+    password = get_password()
 
     client = BookLoreClient(config.booklore_url)
     db = Database()
