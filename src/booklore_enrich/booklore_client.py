@@ -37,7 +37,9 @@ class BookLoreClient:
                 f"API error {response.status_code}: {response.text}"
             )
         data = response.json()
-        return data.get("data", data)
+        if isinstance(data, dict):
+            return data.get("data", data)
+        return data
 
     def login(self, username: str, password: str) -> None:
         """Authenticate and store JWT tokens."""

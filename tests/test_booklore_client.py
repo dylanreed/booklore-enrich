@@ -112,3 +112,24 @@ def test_auth_header_included():
     client.get_books()
     assert "authorization" in received_headers
     assert received_headers["authorization"] == "Bearer my-token"
+
+
+def test_get_books_handles_raw_list_response():
+    """Verify client handles APIs that return a plain list instead of {data: [...]}."""
+    transport = make_mock_transport(
+        {
+            "/api/v1/auth/login": {
+                "status": 200,
+                "data": {"accessToken": "tok", "refreshToken": "ref"},
+            },
+            "/api/v1/books": [
+                {"id": 1, "title": "Book One", "authors": [{"name": "Author A"}]},
+                {"id": 2, "title": "Book Two", "authors": [{"name": "Author B"}]},
+            ],
+        }
+    )
+    client = BookLoreClient("http://test:6060", transport=transport)
+    client.login("user", "pass")
+    books = client.get_books()
+    assert len(books) == 2
+    assert books[0]["title"] == "Book One"
