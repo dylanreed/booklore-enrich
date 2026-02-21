@@ -61,31 +61,44 @@ async def scrape_source(db: Database, source: str, limit: int, headless: bool,
         with Progress(console=console) as progress:
             task = progress.add_task(f"[cyan]Scraping {source}...", total=len(unscraped))
 
+            found = 0
+            skipped = 0
+            failed = 0
+
             for book in unscraped:
                 progress.update(task, description=f"[cyan]{book['title'][:40]}...")
 
-                # Search for the book
-                result = await scraper.search_book(base_url, book["title"], book["author"])
-                if not result:
-                    progress.advance(task)
-                    continue
+                try:
+                    # Search for the book
+                    result = await scraper.search_book(base_url, book["title"], book["author"])
+                    if not result:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
 
-                # Scrape the book page
-                metadata = await scraper.scrape_book(base_url, result["source_id"], result["slug"])
+                    # Scrape the book page
+                    metadata = await scraper.scrape_book(base_url, result["source_id"], result["slug"])
 
-                # Store tags
-                for tag_name in metadata.get("tags", []):
-                    tag_id = db.get_or_create_tag(tag_name, category="trope", source=source)
-                    db.add_book_tag(book["id"], tag_id)
+                    # Store tags
+                    for tag_name in metadata.get("tags", []):
+                        tag_id = db.get_or_create_tag(tag_name, category="trope", source=source)
+                        db.add_book_tag(book["id"], tag_id)
 
-                # Store steam level
-                if metadata.get("steam_level"):
-                    db.set_steam_level(book["id"], metadata["steam_level"],
-                                       metadata.get("steam_label"))
+                    # Store steam level
+                    if metadata.get("steam_level"):
+                        db.set_steam_level(book["id"], metadata["steam_level"],
+                                           metadata.get("steam_label"))
 
-                # Mark as scraped
-                db.mark_scraped(book["id"], source, result["source_id"])
+                    # Mark as scraped
+                    db.mark_scraped(book["id"], source, result["source_id"])
+                    found += 1
+                except Exception as e:
+                    failed += 1
+                    console.print(f"\n  [red]Error scraping '{book['title']}': {e}[/red]")
+
                 progress.advance(task)
+
+            console.print(f"  Results: {found} scraped, {skipped} not found, {failed} errors")
 
     finally:
         await scraper.stop()

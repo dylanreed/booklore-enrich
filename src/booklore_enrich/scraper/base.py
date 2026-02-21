@@ -1,6 +1,7 @@
 # ABOUTME: Shared scraping utilities and HTML parsing functions.
 # ABOUTME: Provides Playwright browser management and page content extraction.
 
+import asyncio
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -108,13 +109,15 @@ class BrowserScraper:
         """Wait to respect rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self.rate_limit:
-            time.sleep(self.rate_limit - elapsed)
+            await asyncio.sleep(self.rate_limit - elapsed)
         self._last_request_time = time.time()
 
     async def fetch_page(self, url: str, wait_selector: Optional[str] = None) -> str:
         """Navigate to a URL and return the page HTML."""
         await self._rate_limit_wait()
-        await self._page.goto(url, wait_until="networkidle")
+        await self._page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        # Give JS time to render after initial load
+        await self._page.wait_for_timeout(3000)
         if wait_selector:
             try:
                 await self._page.wait_for_selector(wait_selector, timeout=10000)
@@ -126,23 +129,31 @@ class BrowserScraper:
         self, base_url: str, title: str, author: str
     ) -> Optional[Dict[str, str]]:
         """Search for a book on romance.io/booknaut and return the best match."""
-        slug = slugify(title, author)
-        # Try the similar-books search first
-        search_url = f"{base_url}/books/similar"
-        html = await self.fetch_page(search_url)
-
-        # Type in the search box
+        # Use the site's search page with a query parameter
+        query = f"{title} {author}"
+        search_url = f"{base_url}/search?q={query}"
         try:
-            await self._page.fill('input[type="text"]', f"{title} {author}")
-            await self._page.keyboard.press("Enter")
-            await self._page.wait_for_timeout(3000)
-            html = await self._page.content()
+            html = await self.fetch_page(search_url)
+            results = parse_search_results(html)
+            if results:
+                return results[0]
         except Exception:
             pass
 
-        results = parse_search_results(html)
-        if results:
-            return results[0]
+        # Fallback: try the similar-books page with interactive search
+        try:
+            fallback_url = f"{base_url}/books/similar"
+            html = await self.fetch_page(fallback_url)
+            await self._page.fill('input[type="text"]', query)
+            await self._page.keyboard.press("Enter")
+            await self._page.wait_for_timeout(5000)
+            html = await self._page.content()
+            results = parse_search_results(html)
+            if results:
+                return results[0]
+        except Exception:
+            pass
+
         return None
 
     async def scrape_book(
