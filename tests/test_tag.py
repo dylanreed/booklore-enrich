@@ -53,3 +53,29 @@ def test_build_tag_plan(tmp_path):
     assert "slow-burn" in plan[1]
     assert 2 in plan
     assert "enemies-to-lovers" in plan[2]
+
+
+def test_build_tag_plan_deduplicates_across_sources(tmp_path):
+    """Tags from multiple sources should not produce duplicate entries."""
+    db = Database(tmp_path / "dedup.db")
+    db.upsert_book(booklore_id=10, title="Dupe Book", author="Author")
+    book = db.get_book_by_booklore_id(10)
+    # Same trope name from two different sources
+    tag_rio = db.get_or_create_tag("enemies-to-lovers", "trope", "romance.io")
+    tag_bn = db.get_or_create_tag("enemies-to-lovers", "trope", "booknaut")
+    db.add_book_tag(book["id"], tag_rio)
+    db.add_book_tag(book["id"], tag_bn)
+    plan = build_tag_plan(db)
+    # Should only have one "enemies-to-lovers", not two
+    assert plan[10].count("enemies-to-lovers") == 1
+
+
+def test_diff_tags_filters_existing():
+    """diff_tags should remove tags the book already has in BookLore."""
+    from booklore_enrich.commands.tag import diff_tags
+    planned = ["enemies-to-lovers", "slow-burn", "spice-4"]
+    existing = ["enemies-to-lovers", "romance"]
+    result = diff_tags(planned, existing)
+    assert "slow-burn" in result
+    assert "spice-4" in result
+    assert "enemies-to-lovers" not in result

@@ -61,12 +61,26 @@ def build_tag_plan(db: Database) -> Dict[int, List[str]]:
     enriched = db.get_enriched_books()
     plan: Dict[int, List[str]] = {}
     for book in enriched:
-        tags = [t["name"] for t in book.get("tags", [])]
+        seen: set[str] = set()
+        tags: List[str] = []
+        for t in book.get("tags", []):
+            name = t["name"]
+            if name not in seen:
+                seen.add(name)
+                tags.append(name)
         if book.get("steam_level"):
-            tags.append(f"spice-{book['steam_level']}")
+            spice_tag = f"spice-{book['steam_level']}"
+            if spice_tag not in seen:
+                tags.append(spice_tag)
         if tags:
             plan[book["booklore_id"]] = tags
     return plan
+
+
+def diff_tags(planned: List[str], existing: List[str]) -> List[str]:
+    """Filter out tags the book already has in BookLore."""
+    existing_lower = {t.lower() for t in existing}
+    return [t for t in planned if t.lower() not in existing_lower]
 
 
 def run_tag(dry_run: bool):
@@ -121,14 +135,29 @@ def run_tag(dry_run: bool):
             client.assign_books_to_shelf(shelf_id, shelf["booklore_ids"])
             console.print(f"    Assigned {len(shelf['booklore_ids'])} books.")
 
-        # Add category tags to books
+        # Add category tags to books, skipping ones that already exist
         console.print("\nAdding category tags to books...")
+        tagged = 0
+        skipped = 0
         for booklore_id, tags in tag_plan.items():
-            client.update_book_metadata(booklore_id, {
-                "categories": tags,
-            }, merge_categories=True)
+            try:
+                book_data = client.get_book(booklore_id)
+                meta = book_data.get("metadata", book_data)
+                existing_categories = meta.get("categories", [])
+            except Exception:
+                existing_categories = []
 
-        console.print(f"  Tagged {len(tag_plan)} books.")
+            new_tags = diff_tags(tags, existing_categories)
+            if not new_tags:
+                skipped += 1
+                continue
+
+            client.update_book_metadata(booklore_id, {
+                "categories": new_tags,
+            }, merge_categories=True)
+            tagged += 1
+
+        console.print(f"  Tagged {tagged} books, {skipped} already up to date.")
         console.print("\n[green]Tagging complete.[/green]")
     finally:
         client.close()
