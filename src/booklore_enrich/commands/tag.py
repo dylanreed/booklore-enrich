@@ -83,7 +83,7 @@ def diff_tags(planned: List[str], existing: List[str]) -> List[str]:
     return [t for t in planned if t.lower() not in existing_lower]
 
 
-def run_tag(dry_run: bool):
+def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
     """Execute the tag command."""
     config = load_config()
     db = Database()
