@@ -91,8 +91,11 @@ def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
     shelf_plan = build_shelf_plan(db)
     tag_plan = build_tag_plan(db)
 
-    if not shelf_plan and not tag_plan:
-        console.print("[yellow]No enrichment data found. Run 'scrape' first.[/yellow]")
+    effective_shelf_plan = shelf_plan if not skip_shelves else []
+    effective_tag_plan = tag_plan if not skip_tags else {}
+
+    if not effective_shelf_plan and not effective_tag_plan:
+        console.print("[yellow]Nothing to do. Check flags or run 'scrape' first.[/yellow]")
         return
 
     # Display plan
@@ -119,45 +122,47 @@ def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
     try:
         client.login(config.booklore_username, password)
 
-        # Get existing shelves to avoid duplicates
-        existing_shelves = {s["name"]: s["id"] for s in client.get_shelves()}
+        if not skip_shelves:
+            # Get existing shelves to avoid duplicates
+            existing_shelves = {s["name"]: s["id"] for s in client.get_shelves()}
 
-        # Create shelves and assign books
-        for shelf in shelf_plan:
-            if shelf["name"] in existing_shelves:
-                shelf_id = existing_shelves[shelf["name"]]
-                console.print(f"  Shelf '{shelf['name']}' already exists.")
-            else:
-                result = client.create_shelf(shelf["name"])
-                shelf_id = result["id"]
-                console.print(f"  Created shelf '{shelf['name']}'.")
+            # Create shelves and assign books
+            for shelf in shelf_plan:
+                if shelf["name"] in existing_shelves:
+                    shelf_id = existing_shelves[shelf["name"]]
+                    console.print(f"  Shelf '{shelf['name']}' already exists.")
+                else:
+                    result = client.create_shelf(shelf["name"])
+                    shelf_id = result["id"]
+                    console.print(f"  Created shelf '{shelf['name']}'.")
 
-            client.assign_books_to_shelf(shelf_id, shelf["booklore_ids"])
-            console.print(f"    Assigned {len(shelf['booklore_ids'])} books.")
+                client.assign_books_to_shelf(shelf_id, shelf["booklore_ids"])
+                console.print(f"    Assigned {len(shelf['booklore_ids'])} books.")
 
-        # Add category tags to books, skipping ones that already exist
-        console.print("\nAdding category tags to books...")
-        tagged = 0
-        skipped = 0
-        for booklore_id, tags in tag_plan.items():
-            try:
-                book_data = client.get_book(booklore_id)
-                meta = book_data.get("metadata", book_data)
-                existing_categories = meta.get("categories", [])
-            except Exception:
-                existing_categories = []
+        if not skip_tags:
+            # Add category tags to books, skipping ones that already exist
+            console.print("\nAdding category tags to books...")
+            tagged = 0
+            skipped = 0
+            for booklore_id, tags in tag_plan.items():
+                try:
+                    book_data = client.get_book(booklore_id)
+                    meta = book_data.get("metadata", book_data)
+                    existing_categories = meta.get("categories", [])
+                except Exception:
+                    existing_categories = []
 
-            new_tags = diff_tags(tags, existing_categories)
-            if not new_tags:
-                skipped += 1
-                continue
+                new_tags = diff_tags(tags, existing_categories)
+                if not new_tags:
+                    skipped += 1
+                    continue
 
-            client.update_book_metadata(booklore_id, {
-                "categories": new_tags,
-            }, merge_categories=True)
-            tagged += 1
+                client.update_book_metadata(booklore_id, {
+                    "categories": new_tags,
+                }, merge_categories=True)
+                tagged += 1
 
-        console.print(f"  Tagged {tagged} books, {skipped} already up to date.")
+            console.print(f"  Tagged {tagged} books, {skipped} already up to date.")
         console.print("\n[green]Tagging complete.[/green]")
     finally:
         client.close()

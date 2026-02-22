@@ -1,9 +1,12 @@
 # ABOUTME: Tests for the tag command that pushes enrichment data to BookLore.
 # ABOUTME: Verifies shelf creation logic and tag-to-shelf mapping.
 
+from unittest.mock import patch
+
 from booklore_enrich.commands.tag import (
     build_shelf_plan,
     build_tag_plan,
+    run_tag,
     STEAM_SHELF_NAMES,
 )
 from booklore_enrich.db import Database
@@ -79,3 +82,46 @@ def test_diff_tags_filters_existing():
     assert "slow-burn" in result
     assert "spice-4" in result
     assert "enemies-to-lovers" not in result
+
+
+def test_run_tag_skip_shelves_skips_shelf_creation(tmp_path):
+    """When skip_shelves=True, no shelves should be created."""
+    db = _setup_enriched_db(tmp_path)
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.get_book.return_value = {"metadata": {"categories": []}}
+
+        run_tag(dry_run=False, skip_shelves=True, skip_tags=False)
+
+        client.create_shelf.assert_not_called()
+        client.assign_books_to_shelf.assert_not_called()
+        # Tags should still run
+        assert client.update_book_metadata.call_count > 0
+
+
+def test_run_tag_skip_tags_skips_tag_assignment(tmp_path):
+    """When skip_tags=True, no tags should be assigned."""
+    db = _setup_enriched_db(tmp_path)
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+
+        run_tag(dry_run=False, skip_shelves=False, skip_tags=True)
+
+        # Shelves should still run
+        assert client.create_shelf.call_count > 0
+        # Tags should not run
+        client.get_book.assert_not_called()
+        client.update_book_metadata.assert_not_called()
