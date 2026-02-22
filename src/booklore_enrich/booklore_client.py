@@ -74,9 +74,15 @@ class BookLoreClient:
         """List all shelves."""
         return self._request("GET", "/api/v1/shelves")
 
-    def create_shelf(self, name: str) -> Dict[str, Any]:
+    def create_shelf(
+        self, name: str, icon: str = "book", icon_type: str = "PRIME_NG"
+    ) -> Dict[str, Any]:
         """Create a new shelf."""
-        return self._request("POST", "/api/v1/shelves", json={"name": name})
+        return self._request(
+            "POST",
+            "/api/v1/shelves",
+            json={"name": name, "icon": icon, "iconType": icon_type},
+        )
 
     def assign_books_to_shelf(
         self, shelf_id: int, book_ids: List[int]
@@ -86,8 +92,9 @@ class BookLoreClient:
             "POST",
             "/api/v1/books/shelves",
             json={
-                "shelfId": shelf_id,
                 "bookIds": book_ids,
+                "shelvesToAssign": [shelf_id],
+                "shelvesToUnassign": [],
             },
         )
 
