@@ -1,7 +1,9 @@
 # ABOUTME: Tag command that pushes enriched metadata into BookLore as shelves and tags.
 # ABOUTME: Creates trope shelves, steam-level shelves, and adds category tags to books.
 
+import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
 import click
@@ -11,7 +13,7 @@ from rich.table import Table
 
 from booklore_enrich.booklore_client import BookLoreClient
 from booklore_enrich.config import load_config, get_password
-from booklore_enrich.db import Database
+from booklore_enrich.db import Database, compute_tag_hash
 
 console = Console()
 
@@ -84,10 +86,50 @@ def diff_tags(planned: List[str], existing: List[str]) -> List[str]:
     return [t for t in planned if t.lower() not in existing_lower]
 
 
-def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
+def _process_book(booklore_id, tags, client, db, db_lock, progress, task):
+    """Process a single book: check cache, diff tags, update if needed, update cache.
+
+    Returns one of: "cached", "tagged", "up_to_date".
+    """
+    tag_hash = compute_tag_hash(tags)
+
+    with db_lock:
+        cached_hash = db.get_tag_hash(booklore_id)
+    if cached_hash == tag_hash:
+        progress.advance(task)
+        return "cached"
+
+    try:
+        book_data = client.get_book(booklore_id)
+        meta = book_data.get("metadata", book_data)
+        existing_categories = meta.get("categories", [])
+    except Exception:
+        existing_categories = []
+
+    new_tags = diff_tags(tags, existing_categories)
+    if not new_tags:
+        with db_lock:
+            db.set_tag_hash(booklore_id, tag_hash)
+        progress.advance(task)
+        return "up_to_date"
+
+    client.update_book_metadata(booklore_id, {
+        "categories": new_tags,
+    }, merge_categories=True)
+
+    with db_lock:
+        db.set_tag_hash(booklore_id, tag_hash)
+    progress.advance(task)
+    return "tagged"
+
+
+def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False,
+            concurrency: int = 4):
     """Execute the tag command."""
     config = load_config()
-    db = Database()
+    # check_same_thread=False allows the db to be shared across ThreadPoolExecutor
+    # workers; a threading.Lock serializes all db access for safety.
+    db = Database(check_same_thread=False)
 
     shelf_plan = build_shelf_plan(db)
     tag_plan = build_tag_plan(db)
@@ -142,33 +184,31 @@ def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
             console.print(f"  Processed {len(shelf_plan)} shelves.")
 
         if not skip_tags:
-            # Add category tags to books, skipping ones that already exist
+            # Add category tags to books, skipping cached and already-up-to-date ones
             console.print("\nAdding category tags to books...")
-            tagged = 0
-            skipped = 0
+            db_lock = threading.Lock()
+            results = []
+
             with Progress() as progress:
                 task = progress.add_task("Tagging books...", total=len(tag_plan))
-                for booklore_id, tags in tag_plan.items():
-                    try:
-                        book_data = client.get_book(booklore_id)
-                        meta = book_data.get("metadata", book_data)
-                        existing_categories = meta.get("categories", [])
-                    except Exception:
-                        existing_categories = []
+                with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                    futures = {
+                        executor.submit(
+                            _process_book, booklore_id, tags,
+                            client, db, db_lock, progress, task
+                        ): booklore_id
+                        for booklore_id, tags in tag_plan.items()
+                    }
+                    for future in futures:
+                        results.append(future.result())
 
-                    new_tags = diff_tags(tags, existing_categories)
-                    if not new_tags:
-                        skipped += 1
-                        progress.advance(task)
-                        continue
-
-                    client.update_book_metadata(booklore_id, {
-                        "categories": new_tags,
-                    }, merge_categories=True)
-                    tagged += 1
-                    progress.advance(task)
-
-            console.print(f"  Tagged {tagged} books, {skipped} already up to date.")
+            cached = results.count("cached")
+            tagged = results.count("tagged")
+            up_to_date = results.count("up_to_date")
+            console.print(
+                f"  Skipped {cached} cached, tagged {tagged}, "
+                f"{up_to_date} already up to date."
+            )
         console.print("\n[green]Tagging complete.[/green]")
     finally:
         client.close()

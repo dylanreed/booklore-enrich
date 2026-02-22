@@ -46,10 +46,11 @@ def scrape(source, limit):
 @click.option("--dry-run", is_flag=True, help="Preview changes without applying.")
 @click.option("--skip-shelves", is_flag=True, help="Skip shelf creation, only add tags.")
 @click.option("--skip-tags", is_flag=True, help="Skip tag assignment, only create shelves.")
-def tag(dry_run, skip_shelves, skip_tags):
+@click.option("--concurrency", "-c", type=int, default=4, help="Max concurrent API workers.")
+def tag(dry_run, skip_shelves, skip_tags, concurrency):
     """Push enriched metadata as tags and shelves into BookLore."""
     from booklore_enrich.commands.tag import run_tag
-    run_tag(dry_run, skip_shelves=skip_shelves, skip_tags=skip_tags)
+    run_tag(dry_run, skip_shelves=skip_shelves, skip_tags=skip_tags, concurrency=concurrency)
 
 
 @cli.command()

@@ -1,19 +1,22 @@
 # ABOUTME: Tests for the tag command that pushes enrichment data to BookLore.
-# ABOUTME: Verifies shelf creation logic and tag-to-shelf mapping.
+# ABOUTME: Verifies shelf creation, tag-to-shelf mapping, cache integration, and concurrency.
 
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
+from booklore_enrich.cli import cli
 from booklore_enrich.commands.tag import (
     build_shelf_plan,
     build_tag_plan,
     run_tag,
     STEAM_SHELF_NAMES,
 )
-from booklore_enrich.db import Database
+from booklore_enrich.db import Database, compute_tag_hash
 
 
-def _setup_enriched_db(tmp_path):
-    db = Database(tmp_path / "test.db")
+def _setup_enriched_db(tmp_path, check_same_thread=False):
+    db = Database(tmp_path / "test.db", check_same_thread=check_same_thread)
     db.upsert_book(booklore_id=1, title="Book A", author="Author")
     db.upsert_book(booklore_id=2, title="Book B", author="Author")
     book_a = db.get_book_by_booklore_id(1)
@@ -145,3 +148,140 @@ def test_run_tag_skip_tags_skips_tag_assignment(tmp_path):
         # Tags should not run
         client.get_book.assert_not_called()
         client.update_book_metadata.assert_not_called()
+
+
+def test_cached_books_skip_api_calls(tmp_path):
+    """Books with matching cache hashes should skip API calls entirely."""
+    db = _setup_enriched_db(tmp_path)
+    # Pre-populate the tag cache for both books with the correct hashes
+    tag_plan = build_tag_plan(db)
+    for booklore_id, tags in tag_plan.items():
+        db.set_tag_hash(booklore_id, compute_tag_hash(tags))
+
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+
+        run_tag(dry_run=False, skip_shelves=True, skip_tags=False)
+
+        # No API calls should be made for cached books
+        client.get_book.assert_not_called()
+        client.update_book_metadata.assert_not_called()
+
+
+def test_uncached_books_get_api_calls_and_cached_after(tmp_path):
+    """Uncached books should go through the normal API flow and get cached after."""
+    db_path = tmp_path / "test.db"
+    db = _setup_enriched_db(tmp_path)
+    tag_plan = build_tag_plan(db)
+
+    # Verify no cache entries exist
+    for booklore_id in tag_plan:
+        assert db.get_tag_hash(booklore_id) is None
+
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+        client.get_book.return_value = {"metadata": {"categories": []}}
+
+        run_tag(dry_run=False, skip_shelves=True, skip_tags=False)
+
+        # API calls should have been made for uncached books
+        assert client.get_book.call_count == len(tag_plan)
+        assert client.update_book_metadata.call_count == len(tag_plan)
+
+    # Re-open the db to verify cache entries (run_tag closes the db)
+    db2 = Database(db_path)
+    for booklore_id, tags in tag_plan.items():
+        cached_hash = db2.get_tag_hash(booklore_id)
+        assert cached_hash is not None
+        assert cached_hash == compute_tag_hash(tags)
+    db2.close()
+
+
+def test_already_up_to_date_books_get_cached(tmp_path):
+    """Books that are already up to date via API diff should still get cached."""
+    db_path = tmp_path / "test.db"
+    db = _setup_enriched_db(tmp_path)
+    tag_plan = build_tag_plan(db)
+
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+        # All tags already exist in BookLore, so diff will be empty
+        client.get_book.return_value = {
+            "metadata": {"categories": ["enemies-to-lovers", "slow-burn", "spice-4", "spice-2"]}
+        }
+
+        run_tag(dry_run=False, skip_shelves=True, skip_tags=False)
+
+        # No update calls needed since all tags already exist
+        client.update_book_metadata.assert_not_called()
+
+    # Re-open the db to verify cache entries (run_tag closes the db)
+    db2 = Database(db_path)
+    for booklore_id, tags in tag_plan.items():
+        cached_hash = db2.get_tag_hash(booklore_id)
+        assert cached_hash is not None
+    db2.close()
+
+
+def test_tag_command_has_concurrency_flag():
+    """The tag CLI command should accept a --concurrency flag."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["tag", "--help"])
+    assert result.exit_code == 0
+    assert "--concurrency" in result.output or "-c" in result.output
+
+
+def test_run_tag_accepts_concurrency_parameter(tmp_path):
+    """run_tag should accept and use the concurrency parameter."""
+    db = _setup_enriched_db(tmp_path)
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+        client.get_book.return_value = {"metadata": {"categories": []}}
+
+        # Should not raise an error when concurrency is passed
+        run_tag(dry_run=False, skip_shelves=True, skip_tags=False, concurrency=2)
+
+        # Books should still get tagged
+        assert client.update_book_metadata.call_count > 0
+
+
+def test_cli_passes_concurrency_to_run_tag(tmp_path):
+    """The CLI should pass the --concurrency value through to run_tag."""
+    with patch("booklore_enrich.commands.tag.run_tag") as mock_run_tag:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["tag", "--dry-run", "--concurrency", "8"])
+        assert result.exit_code == 0
+        mock_run_tag.assert_called_once_with(
+            True,
+            skip_shelves=False,
+            skip_tags=False,
+            concurrency=8,
+        )

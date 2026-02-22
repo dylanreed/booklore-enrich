@@ -81,9 +81,9 @@ def compute_tag_hash(tags: List[str]) -> str:
 
 
 class Database:
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: Path = DEFAULT_DB_PATH, check_same_thread: bool = True):
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(db_path))
+        self.conn = sqlite3.connect(str(db_path), check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
