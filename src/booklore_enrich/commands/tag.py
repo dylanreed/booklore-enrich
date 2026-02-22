@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 import click
 from rich.console import Console
+from rich.progress import Progress
 from rich.table import Table
 
 from booklore_enrich.booklore_client import BookLoreClient
@@ -127,40 +128,45 @@ def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False):
             existing_shelves = {s["name"]: s["id"] for s in client.get_shelves()}
 
             # Create shelves and assign books
-            for shelf in shelf_plan:
-                if shelf["name"] in existing_shelves:
-                    shelf_id = existing_shelves[shelf["name"]]
-                    console.print(f"  Shelf '{shelf['name']}' already exists.")
-                else:
-                    result = client.create_shelf(shelf["name"])
-                    shelf_id = result["id"]
-                    console.print(f"  Created shelf '{shelf['name']}'.")
+            with Progress() as progress:
+                task = progress.add_task("Creating shelves...", total=len(shelf_plan))
+                for shelf in shelf_plan:
+                    if shelf["name"] in existing_shelves:
+                        shelf_id = existing_shelves[shelf["name"]]
+                    else:
+                        result = client.create_shelf(shelf["name"])
+                        shelf_id = result["id"]
 
-                client.assign_books_to_shelf(shelf_id, shelf["booklore_ids"])
-                console.print(f"    Assigned {len(shelf['booklore_ids'])} books.")
+                    client.assign_books_to_shelf(shelf_id, shelf["booklore_ids"])
+                    progress.advance(task)
+            console.print(f"  Processed {len(shelf_plan)} shelves.")
 
         if not skip_tags:
             # Add category tags to books, skipping ones that already exist
             console.print("\nAdding category tags to books...")
             tagged = 0
             skipped = 0
-            for booklore_id, tags in tag_plan.items():
-                try:
-                    book_data = client.get_book(booklore_id)
-                    meta = book_data.get("metadata", book_data)
-                    existing_categories = meta.get("categories", [])
-                except Exception:
-                    existing_categories = []
+            with Progress() as progress:
+                task = progress.add_task("Tagging books...", total=len(tag_plan))
+                for booklore_id, tags in tag_plan.items():
+                    try:
+                        book_data = client.get_book(booklore_id)
+                        meta = book_data.get("metadata", book_data)
+                        existing_categories = meta.get("categories", [])
+                    except Exception:
+                        existing_categories = []
 
-                new_tags = diff_tags(tags, existing_categories)
-                if not new_tags:
-                    skipped += 1
-                    continue
+                    new_tags = diff_tags(tags, existing_categories)
+                    if not new_tags:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
 
-                client.update_book_metadata(booklore_id, {
-                    "categories": new_tags,
-                }, merge_categories=True)
-                tagged += 1
+                    client.update_book_metadata(booklore_id, {
+                        "categories": new_tags,
+                    }, merge_categories=True)
+                    tagged += 1
+                    progress.advance(task)
 
             console.print(f"  Tagged {tagged} books, {skipped} already up to date.")
         console.print("\n[green]Tagging complete.[/green]")

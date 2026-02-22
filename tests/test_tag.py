@@ -105,6 +105,26 @@ def test_run_tag_skip_shelves_skips_shelf_creation(tmp_path):
         assert client.update_book_metadata.call_count > 0
 
 
+def test_run_tag_full_run_tags_and_shelves(tmp_path):
+    """Full run creates shelves and tags books."""
+    db = _setup_enriched_db(tmp_path)
+    with patch("booklore_enrich.commands.tag.Database", return_value=db), \
+         patch("booklore_enrich.commands.tag.load_config") as mock_config, \
+         patch("booklore_enrich.commands.tag.get_password", return_value="pass"), \
+         patch("booklore_enrich.commands.tag.BookLoreClient") as MockClient:
+        mock_config.return_value.booklore_url = "http://localhost"
+        mock_config.return_value.booklore_username = "user"
+        client = MockClient.return_value
+        client.get_shelves.return_value = []
+        client.create_shelf.return_value = {"id": 99}
+        client.get_book.return_value = {"metadata": {"categories": []}}
+
+        run_tag(dry_run=False)
+
+        assert client.create_shelf.call_count > 0
+        assert client.update_book_metadata.call_count > 0
+
+
 def test_run_tag_skip_tags_skips_tag_assignment(tmp_path):
     """When skip_tags=True, no tags should be assigned."""
     db = _setup_enriched_db(tmp_path)
