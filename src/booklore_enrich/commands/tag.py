@@ -86,7 +86,23 @@ def diff_tags(planned: List[str], existing: List[str]) -> List[str]:
     return [t for t in planned if t.lower() not in existing_lower]
 
 
-def _process_book(booklore_id, tags, client, db, db_lock, progress, task):
+_thread_local = threading.local()
+
+
+def _get_thread_client(base_url, access_token, refresh_token, thread_clients, thread_clients_lock):
+    """Get or create a thread-local BookLoreClient with pre-authenticated tokens."""
+    if not hasattr(_thread_local, "client"):
+        c = BookLoreClient(base_url)
+        c._access_token = access_token
+        c._refresh_token = refresh_token
+        _thread_local.client = c
+        with thread_clients_lock:
+            thread_clients.append(c)
+    return _thread_local.client
+
+
+def _process_book(booklore_id, tags, base_url, access_token, refresh_token,
+                  db, db_lock, thread_clients, thread_clients_lock, progress, task):
     """Process a single book: check cache, diff tags, update if needed, update cache.
 
     Returns one of: "cached", "tagged", "up_to_date".
@@ -99,11 +115,16 @@ def _process_book(booklore_id, tags, client, db, db_lock, progress, task):
         progress.advance(task)
         return "cached"
 
+    client = _get_thread_client(
+        base_url, access_token, refresh_token, thread_clients, thread_clients_lock
+    )
+
     try:
         book_data = client.get_book(booklore_id)
         meta = book_data.get("metadata", book_data)
         existing_categories = meta.get("categories", [])
-    except Exception:
+    except Exception as exc:
+        console.print(f"[yellow]Warning: could not fetch book {booklore_id}: {exc}[/yellow]")
         existing_categories = []
 
     new_tags = diff_tags(tags, existing_categories)
@@ -187,28 +208,49 @@ def run_tag(dry_run: bool, skip_shelves: bool = False, skip_tags: bool = False,
             # Add category tags to books, skipping cached and already-up-to-date ones
             console.print("\nAdding category tags to books...")
             db_lock = threading.Lock()
+            thread_clients: List[BookLoreClient] = []
+            thread_clients_lock = threading.Lock()
             results = []
 
-            with Progress() as progress:
-                task = progress.add_task("Tagging books...", total=len(tag_plan))
-                with ThreadPoolExecutor(max_workers=concurrency) as executor:
-                    futures = {
-                        executor.submit(
-                            _process_book, booklore_id, tags,
-                            client, db, db_lock, progress, task
-                        ): booklore_id
-                        for booklore_id, tags in tag_plan.items()
-                    }
-                    for future in futures:
-                        results.append(future.result())
+            try:
+                with Progress() as progress:
+                    task = progress.add_task("Tagging books...", total=len(tag_plan))
+                    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                        futures = {
+                            executor.submit(
+                                _process_book, booklore_id, tags,
+                                config.booklore_url,
+                                client._access_token, client._refresh_token,
+                                db, db_lock,
+                                thread_clients, thread_clients_lock,
+                                progress, task
+                            ): booklore_id
+                            for booklore_id, tags in tag_plan.items()
+                        }
+                        for future in futures:
+                            try:
+                                results.append(future.result())
+                            except Exception as exc:
+                                booklore_id = futures[future]
+                                console.print(
+                                    f"[red]Error processing book {booklore_id}: {exc}[/red]"
+                                )
+                                results.append("error")
+            finally:
+                for tc in thread_clients:
+                    tc.close()
 
             cached = results.count("cached")
             tagged = results.count("tagged")
             up_to_date = results.count("up_to_date")
-            console.print(
+            errors = results.count("error")
+            summary = (
                 f"  Skipped {cached} cached, tagged {tagged}, "
                 f"{up_to_date} already up to date."
             )
+            if errors:
+                summary += f" [red]{errors} errors.[/red]"
+            console.print(summary)
         console.print("\n[green]Tagging complete.[/green]")
     finally:
         client.close()
