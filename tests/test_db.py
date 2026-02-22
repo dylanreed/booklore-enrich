@@ -145,3 +145,18 @@ def test_set_tag_hash_upserts(tmp_path):
     assert db.get_tag_hash(42) == hash_v1
     db.set_tag_hash(42, hash_v2)
     assert db.get_tag_hash(42) == hash_v2
+
+
+def test_compute_tag_hash_empty_list():
+    """Empty tag list produces a consistent hash."""
+    hash1 = compute_tag_hash([])
+    hash2 = compute_tag_hash([])
+    assert hash1 == hash2
+    assert len(hash1) == 64  # SHA-256 hex digest length
+
+
+def test_compute_tag_hash_deduplicates():
+    """Duplicate tags are normalized so they don't cause spurious cache misses."""
+    hash_with_dup = compute_tag_hash(["slow-burn", "slow-burn"])
+    hash_without_dup = compute_tag_hash(["slow-burn"])
+    assert hash_with_dup == hash_without_dup

@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS tag_cache (
 
 def compute_tag_hash(tags: List[str]) -> str:
     """Compute a stable hash for a list of tags, independent of input order."""
-    canonical = "|".join(sorted(tags))
+    canonical = "|".join(sorted(set(tags)))
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
@@ -201,7 +201,7 @@ class Database:
         ).fetchone()
         return row["tag_hash"] if row else None
 
-    def set_tag_hash(self, booklore_id: int, tag_hash: str):
+    def set_tag_hash(self, booklore_id: int, tag_hash: str) -> None:
         self.conn.execute(
             """INSERT INTO tag_cache (booklore_id, tag_hash, tagged_at)
                VALUES (?, ?, CURRENT_TIMESTAMP)
