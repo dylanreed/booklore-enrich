@@ -1,6 +1,7 @@
 # ABOUTME: SQLite database cache for scraped book metadata.
 # ABOUTME: Stores books, trope tags, steam levels, and discovery results.
 
+import hashlib
 import sqlite3
 import datetime
 from pathlib import Path
@@ -64,7 +65,19 @@ CREATE TABLE IF NOT EXISTS discovery_preferences (
     enabled BOOLEAN DEFAULT 1,
     UNIQUE(source, trope)
 );
+
+CREATE TABLE IF NOT EXISTS tag_cache (
+    booklore_id INTEGER PRIMARY KEY,
+    tag_hash TEXT NOT NULL,
+    tagged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
+
+
+def compute_tag_hash(tags: List[str]) -> str:
+    """Compute a stable hash for a list of tags, independent of input order."""
+    canonical = "|".join(sorted(tags))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class Database:
@@ -180,6 +193,22 @@ class Database:
 
     def dismiss_discovery(self, discovery_id: int):
         self.conn.execute("UPDATE discoveries SET dismissed = 1 WHERE id = ?", (discovery_id,))
+        self.conn.commit()
+
+    def get_tag_hash(self, booklore_id: int) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT tag_hash FROM tag_cache WHERE booklore_id = ?", (booklore_id,)
+        ).fetchone()
+        return row["tag_hash"] if row else None
+
+    def set_tag_hash(self, booklore_id: int, tag_hash: str):
+        self.conn.execute(
+            """INSERT INTO tag_cache (booklore_id, tag_hash, tagged_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(booklore_id) DO UPDATE SET
+                   tag_hash=excluded.tag_hash, tagged_at=excluded.tagged_at""",
+            (booklore_id, tag_hash),
+        )
         self.conn.commit()
 
     def get_enriched_books(self) -> List[Dict[str, Any]]:

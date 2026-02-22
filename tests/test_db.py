@@ -1,8 +1,7 @@
 # ABOUTME: Tests for the SQLite database cache layer.
-# ABOUTME: Covers schema creation, book CRUD, tag management, and discovery storage.
+# ABOUTME: Covers schema creation, book CRUD, tag management, discovery storage, and tag caching.
 
-import datetime
-from booklore_enrich.db import Database
+from booklore_enrich.db import Database, compute_tag_hash
 
 
 def test_database_creates_tables(tmp_path):
@@ -15,6 +14,7 @@ def test_database_creates_tables(tmp_path):
     assert "book_steam" in table_names
     assert "discoveries" in table_names
     assert "discovery_preferences" in table_names
+    assert "tag_cache" in table_names
 
 
 def test_upsert_and_get_book(tmp_path):
@@ -104,3 +104,44 @@ def test_get_all_books_with_tags(tmp_path):
     assert enriched[0]["booklore_id"] == 1
     assert len(enriched[0]["tags"]) == 2
     assert enriched[0]["steam_level"] == 3
+
+
+def test_compute_tag_hash_consistent_regardless_of_order():
+    """Same tags in different order should produce the same hash."""
+    hash1 = compute_tag_hash(["slow-burn", "enemies-to-lovers", "spice-4"])
+    hash2 = compute_tag_hash(["enemies-to-lovers", "spice-4", "slow-burn"])
+    hash3 = compute_tag_hash(["spice-4", "slow-burn", "enemies-to-lovers"])
+    assert hash1 == hash2
+    assert hash2 == hash3
+
+
+def test_compute_tag_hash_different_for_different_tags():
+    """Different tag sets should produce different hashes."""
+    hash1 = compute_tag_hash(["slow-burn", "enemies-to-lovers"])
+    hash2 = compute_tag_hash(["slow-burn", "friends-to-lovers"])
+    assert hash1 != hash2
+
+
+def test_get_tag_hash_returns_none_for_unknown(tmp_path):
+    """get_tag_hash should return None for a booklore_id with no cached hash."""
+    db = Database(tmp_path / "test.db")
+    assert db.get_tag_hash(99999) is None
+
+
+def test_set_and_get_tag_hash(tmp_path):
+    """set_tag_hash should store a hash that get_tag_hash can retrieve."""
+    db = Database(tmp_path / "test.db")
+    tag_hash = compute_tag_hash(["enemies-to-lovers", "slow-burn"])
+    db.set_tag_hash(42, tag_hash)
+    assert db.get_tag_hash(42) == tag_hash
+
+
+def test_set_tag_hash_upserts(tmp_path):
+    """set_tag_hash should update the hash if the booklore_id already exists."""
+    db = Database(tmp_path / "test.db")
+    hash_v1 = compute_tag_hash(["enemies-to-lovers"])
+    hash_v2 = compute_tag_hash(["enemies-to-lovers", "slow-burn"])
+    db.set_tag_hash(42, hash_v1)
+    assert db.get_tag_hash(42) == hash_v1
+    db.set_tag_hash(42, hash_v2)
+    assert db.get_tag_hash(42) == hash_v2
