@@ -20,7 +20,12 @@ CREATE TABLE IF NOT EXISTS books (
     romance_io_id TEXT,
     booknaut_id TEXT,
     last_scraped_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_path TEXT UNIQUE,
+    series TEXT,
+    series_index TEXT,
+    series_total INTEGER,
+    embedded_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS tags (

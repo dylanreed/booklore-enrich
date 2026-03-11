@@ -160,3 +160,15 @@ def test_compute_tag_hash_deduplicates():
     hash_with_dup = compute_tag_hash(["slow-burn", "slow-burn"])
     hash_without_dup = compute_tag_hash(["slow-burn"])
     assert hash_with_dup == hash_without_dup
+
+
+def test_schema_has_new_columns(tmp_path):
+    """New columns exist in the books table."""
+    db = Database(tmp_path / "test.db")
+    cols = db.execute("PRAGMA table_info(books)").fetchall()
+    col_names = {row[1] for row in cols}
+    assert "file_path" in col_names
+    assert "series" in col_names
+    assert "series_index" in col_names
+    assert "series_total" in col_names
+    assert "embedded_at" in col_names
