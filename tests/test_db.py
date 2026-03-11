@@ -174,6 +174,95 @@ def test_schema_has_new_columns(tmp_path):
     assert "embedded_at" in col_names
 
 
+def test_upsert_book_by_path(tmp_path):
+    """Books can be upserted using file_path as identity key."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path(
+        file_path="/books/Author/Series/01 - Title.epub",
+        title="Title", author="Author",
+        series="Series", series_index="01",
+    )
+    book = db.get_book_by_path("/books/Author/Series/01 - Title.epub")
+    assert book is not None
+    assert book["title"] == "Title"
+    assert book["series"] == "Series"
+    assert book["series_index"] == "01"
+
+
+def test_upsert_book_by_path_updates_existing(tmp_path):
+    """Upserting with same file_path updates the record."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path(
+        file_path="/books/book.epub",
+        title="Old", author="Author",
+    )
+    db.upsert_book_by_path(
+        file_path="/books/book.epub",
+        title="New", author="Author",
+        series="Found Series", series_index="3", series_total=5,
+    )
+    book = db.get_book_by_path("/books/book.epub")
+    assert book["title"] == "New"
+    assert book["series"] == "Found Series"
+    assert book["series_total"] == 5
+
+
+def test_get_embeddable_books(tmp_path):
+    """Returns scraped books that have a file_path."""
+    db = Database(tmp_path / "test.db")
+    # Book with path and scraped — should be returned
+    db.upsert_book_by_path("/books/a.epub", "Book A", "Author")
+    book_a = db.get_book_by_path("/books/a.epub")
+    db.mark_scraped(book_a["id"], source="romance.io", source_id="abc")
+    tag_id = db.get_or_create_tag("slow-burn", "trope", "romance.io")
+    db.add_book_tag(book_a["id"], tag_id)
+    # Book with path but not scraped — should NOT be returned
+    db.upsert_book_by_path("/books/b.epub", "Book B", "Author")
+    # Book scraped but no path (API-discovered) — should NOT be returned
+    db.upsert_book(booklore_id=99, title="Book C", author="Author")
+    embeddable = db.get_embeddable_books()
+    assert len(embeddable) == 1
+    assert embeddable[0]["title"] == "Book A"
+    assert embeddable[0]["file_path"] == "/books/a.epub"
+    assert len(embeddable[0]["tags"]) == 1
+
+
+def test_get_embeddable_books_respects_path_prefix(tmp_path):
+    """Only returns books whose file_path starts with the given prefix."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path("/nas/books/a.epub", "Book A", "Author")
+    db.upsert_book_by_path("/local/books/b.epub", "Book B", "Author")
+    for path in ["/nas/books/a.epub", "/local/books/b.epub"]:
+        book = db.get_book_by_path(path)
+        db.mark_scraped(book["id"], source="romance.io", source_id="x")
+        db.add_book_tag(book["id"], db.get_or_create_tag("t", "trope", "romance.io"))
+    result = db.get_embeddable_books(path_prefix="/nas/")
+    assert len(result) == 1
+    assert result[0]["title"] == "Book A"
+
+
+def test_mark_embedded(tmp_path):
+    """mark_embedded sets embedded_at timestamp."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path("/books/a.epub", "Book", "Author")
+    book = db.get_book_by_path("/books/a.epub")
+    db.mark_embedded(book["id"])
+    updated = db.get_book_by_path("/books/a.epub")
+    assert updated["embedded_at"] is not None
+
+
+def test_get_embeddable_books_skips_already_embedded(tmp_path):
+    """Already-embedded books are skipped unless force=True."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path("/books/a.epub", "Book", "Author")
+    book = db.get_book_by_path("/books/a.epub")
+    db.mark_scraped(book["id"], source="romance.io", source_id="x")
+    db.add_book_tag(book["id"], db.get_or_create_tag("t", "trope", "romance.io"))
+    db.mark_embedded(book["id"])
+    assert len(db.get_embeddable_books()) == 0
+    assert len(db.get_embeddable_books(force=True)) == 1
+
+
 def test_migration_adds_missing_columns(tmp_path):
     """Existing databases get new columns via ALTER TABLE."""
     import sqlite3

@@ -234,6 +234,62 @@ class Database:
         )
         self.conn.commit()
 
+    def upsert_book_by_path(self, file_path: str, title: str, author: str,
+                            series: Optional[str] = None, series_index: Optional[str] = None,
+                            series_total: Optional[int] = None):
+        """Upsert a book using file_path as identity (for filesystem-discovered books)."""
+        self.execute(
+            """INSERT INTO books (file_path, title, author, series, series_index, series_total)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(file_path) DO UPDATE SET
+                   title=excluded.title, author=excluded.author,
+                   series=excluded.series, series_index=excluded.series_index,
+                   series_total=excluded.series_total""",
+            (file_path, title, author, series, series_index, series_total),
+        )
+        self.conn.commit()
+
+    def get_book_by_path(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """Get a book by its file path."""
+        row = self.execute("SELECT * FROM books WHERE file_path = ?", (file_path,)).fetchone()
+        return dict(row) if row else None
+
+    def mark_embedded(self, book_id: int):
+        """Record that a book's EPUB has been written with enriched metadata."""
+        self.execute(
+            "UPDATE books SET embedded_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (book_id,),
+        )
+        self.conn.commit()
+
+    def get_embeddable_books(self, path_prefix: Optional[str] = None,
+                             force: bool = False) -> List[Dict[str, Any]]:
+        """Get all scraped books with file_path, optionally filtered by prefix.
+
+        Returns books with their tags. Skips already-embedded books unless force=True.
+        """
+        query = """
+            SELECT b.*
+            FROM books b
+            WHERE b.file_path IS NOT NULL
+              AND b.last_scraped_at IS NOT NULL
+        """
+        params: List[Any] = []
+        if not force:
+            query += " AND b.embedded_at IS NULL"
+        if path_prefix:
+            if not path_prefix.endswith("/"):
+                path_prefix += "/"
+            query += " AND b.file_path LIKE ?"
+            params.append(path_prefix + "%")
+        rows = self.execute(query, params).fetchall()
+        results = []
+        for row in rows:
+            book = dict(row)
+            book["tags"] = self.get_book_tags(book["id"])
+            results.append(book)
+        return results
+
     def get_enriched_books(self) -> List[Dict[str, Any]]:
         """Get all books that have been enriched with tags or steam levels."""
         books = self.conn.execute(
