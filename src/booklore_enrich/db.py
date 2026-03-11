@@ -269,8 +269,9 @@ class Database:
         Returns books with their tags. Skips already-embedded books unless force=True.
         """
         query = """
-            SELECT b.*
+            SELECT b.*, bs.level as steam_level, bs.label as steam_label
             FROM books b
+            LEFT JOIN book_steam bs ON b.id = bs.book_id
             WHERE b.file_path IS NOT NULL
               AND b.last_scraped_at IS NOT NULL
         """
