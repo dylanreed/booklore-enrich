@@ -172,3 +172,35 @@ def test_schema_has_new_columns(tmp_path):
     assert "series_index" in col_names
     assert "series_total" in col_names
     assert "embedded_at" in col_names
+
+
+def test_migration_adds_missing_columns(tmp_path):
+    """Existing databases get new columns via ALTER TABLE."""
+    import sqlite3
+    db_path = tmp_path / "old.db"
+    # Create a database with the old schema (no new columns)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        booklore_id INTEGER UNIQUE,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        isbn TEXT,
+        romance_io_id TEXT,
+        booknaut_id TEXT,
+        last_scraped_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("INSERT INTO books (booklore_id, title, author) VALUES (1, 'Old Book', 'Author')")
+    conn.commit()
+    conn.close()
+    # Open with Database class — should migrate
+    db = Database(db_path)
+    cols = db.execute("PRAGMA table_info(books)").fetchall()
+    col_names = {row[1] for row in cols}
+    assert "file_path" in col_names
+    assert "series" in col_names
+    assert "embedded_at" in col_names
+    # Existing data should survive
+    book = db.get_book_by_booklore_id(1)
+    assert book["title"] == "Old Book"

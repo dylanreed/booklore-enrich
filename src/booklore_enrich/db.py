@@ -93,9 +93,27 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._create_tables()
+        self._migrate()
 
     def _create_tables(self):
         self.conn.executescript(SCHEMA)
+        self.conn.commit()
+
+    def _migrate(self):
+        """Add columns that may be missing from older databases."""
+        existing = {row[1] for row in self.execute("PRAGMA table_info(books)").fetchall()}
+        # Note: SQLite does not allow ADD COLUMN with UNIQUE constraint.
+        # file_path uniqueness is enforced only on fresh databases via the schema.
+        migrations = [
+            ("file_path", "TEXT"),
+            ("series", "TEXT"),
+            ("series_index", "TEXT"),
+            ("series_total", "INTEGER"),
+            ("embedded_at", "TIMESTAMP"),
+        ]
+        for col_name, col_type in migrations:
+            if col_name not in existing:
+                self.execute(f"ALTER TABLE books ADD COLUMN {col_name} {col_type}")
         self.conn.commit()
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
