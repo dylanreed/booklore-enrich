@@ -65,6 +65,11 @@ async def scrape_source(db: Database, source: str, limit: int, headless: bool,
     scraper = BrowserScraper(headless=headless, rate_limit=rate_limit)
     await scraper.start()
 
+    if scraper.is_cdp:
+        console.print("  [green]Connected to Chrome via CDP (port 9222)[/green]")
+    else:
+        console.print("  [dim]Using stealth browser (launch Chrome with --remote-debugging-port=9222 for better Cloudflare bypass)[/dim]")
+
     try:
         with Progress(console=console) as progress:
             task = progress.add_task(f"[cyan]Scraping {source}...", total=len(unscraped))
@@ -112,35 +117,43 @@ async def scrape_source(db: Database, source: str, limit: int, headless: bool,
         await scraper.stop()
 
 
-def run_scrape(source: str, limit: int):
+def run_scrape(source: str = "all", limit: int = 0, from_dir: str | None = None):
     """Execute the scrape command."""
-    config = load_config()
-
-    if not config.booklore_username:
-        console.print("[red]No BookLore username configured.[/red]")
-        return
-
-    password = get_password()
-
-    client = BookLoreClient(config.booklore_url)
     db = Database()
+    client = None
 
     try:
-        console.print(f"Connecting to BookLore at {config.booklore_url}...")
-        client.login(config.booklore_username, password)
+        if from_dir:
+            # Filesystem discovery — skip BookLore sync entirely
+            from booklore_enrich.path_parser import discover_books_from_dir
+            console.print(f"[bold]Discovering books from:[/bold] {from_dir}")
+            books = discover_books_from_dir(from_dir, db=db)
+            console.print(f"Found [green]{len(books)}[/green] epub files")
+        else:
+            # Existing BookLore API sync path
+            config = load_config()
+            if not config.booklore_username:
+                console.print("[red]No BookLore username configured.[/red]")
+                return
+            password = get_password()
+            client = BookLoreClient(config.booklore_url)
+            console.print(f"Connecting to BookLore at {config.booklore_url}...")
+            client.login(config.booklore_username, password)
+            console.print("Syncing book list to local cache...")
+            books = client.get_books()
+            synced = sync_books_to_cache(db, books)
+            console.print(f"  Synced {synced} books.")
 
-        console.print("Syncing book list to local cache...")
-        books = client.get_books()
-        synced = sync_books_to_cache(db, books)
-        console.print(f"  Synced {synced} books.")
+        headless = True if from_dir else config.headless
+        rate_limit = 1.0 if from_dir else config.rate_limit_seconds
 
         sources = [source] if source != "all" else list(SOURCES.keys())
         for src in sources:
             console.print(f"\nScraping {src}...")
-            asyncio.run(scrape_source(db, src, limit, config.headless,
-                                      config.rate_limit_seconds))
+            asyncio.run(scrape_source(db, src, limit, headless, rate_limit))
 
         console.print("\n[green]Scraping complete.[/green]")
     finally:
-        client.close()
+        if client is not None:
+            client.close()
         db.close()

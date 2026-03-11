@@ -36,10 +36,12 @@ def export(output, username):
 @click.option("--source", "-s", type=click.Choice(["romance.io", "booknaut", "all"]),
               default="all", help="Which source to scrape.")
 @click.option("--limit", "-l", type=int, default=0, help="Max books to scrape per source (0=all).")
-def scrape(source, limit):
+@click.option("--from-dir", type=click.Path(exists=True), default=None,
+              help="Discover books from filesystem instead of BookLore API")
+def scrape(source, limit, from_dir):
     """Scrape trope/heat metadata from romance.io and thebooknaut.com."""
     from booklore_enrich.commands.scrape import run_scrape
-    run_scrape(source, limit)
+    run_scrape(source=source, limit=limit, from_dir=from_dir)
 
 
 @cli.command()

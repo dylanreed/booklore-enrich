@@ -54,3 +54,9 @@ def test_tag_command_has_skip_tags_flag():
     runner = CliRunner()
     result = runner.invoke(cli, ["tag", "--help"])
     assert "--skip-tags" in result.output
+
+
+def test_scrape_has_from_dir_option():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["scrape", "--help"])
+    assert "--from-dir" in result.output
