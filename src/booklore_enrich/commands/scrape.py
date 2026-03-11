@@ -92,10 +92,22 @@ async def scrape_source(db: Database, source: str, limit: int, headless: bool,
                     # Scrape the book page
                     metadata = await scraper.scrape_book(base_url, result["source_id"], result["slug"])
 
-                    # Store tags
-                    for tag_name in metadata.get("tags", []):
-                        tag_id = db.get_or_create_tag(tag_name, category="trope", source=source)
+                    # Store tags with categories
+                    for tag in metadata.get("categorized_tags", []):
+                        tag_id = db.get_or_create_tag(
+                            tag["name"], category=tag["category"], source=source
+                        )
                         db.add_book_tag(book["id"], tag_id)
+
+                    # Update series data from scraped page (overwrites filesystem-parsed)
+                    series = metadata.get("series")
+                    if series:
+                        db.update_book_series(
+                            book["id"],
+                            series=series,
+                            series_index=metadata.get("series_index"),
+                            series_total=metadata.get("series_total"),
+                        )
 
                     # Store steam level
                     if metadata.get("steam_level"):

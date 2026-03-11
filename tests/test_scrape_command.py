@@ -37,3 +37,38 @@ def test_sync_books_handles_missing_authors(tmp_path):
     assert synced == 1
     book = db.get_book_by_booklore_id(1)
     assert book["author"] == "Unknown"
+
+
+def test_scrape_stores_tag_categories(tmp_path):
+    """Scrape stores tags with their proper categories, not all as 'trope'."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book(booklore_id=1, title="Test", author="Author")
+    book = db.get_book_by_booklore_id(1)
+    # Simulate what scrape_source does with categorized tags
+    categorized = [
+        {"name": "enemies-to-lovers", "category": "trope"},
+        {"name": "contemporary", "category": "subgenre"},
+        {"name": "alpha-male", "category": "hero-type"},
+    ]
+    for tag in categorized:
+        tag_id = db.get_or_create_tag(tag["name"], category=tag["category"], source="romance.io")
+        db.add_book_tag(book["id"], tag_id)
+    tags = db.get_book_tags(book["id"])
+    categories = {t["category"] for t in tags}
+    assert "trope" in categories
+    assert "subgenre" in categories
+    assert "hero-type" in categories
+
+
+def test_update_book_series_from_scrape(tmp_path):
+    """Scraped series data overwrites filesystem-parsed values."""
+    db = Database(tmp_path / "test.db")
+    db.upsert_book_by_path("/books/Author/MySeries/01 - Book.epub",
+                            "Book", "Author", series="MySeries", series_index="01")
+    book = db.get_book_by_path("/books/Author/MySeries/01 - Book.epub")
+    db.update_book_series(book["id"], series="My Series (Corrected)",
+                           series_index="1", series_total=5)
+    updated = db.get_book_by_path("/books/Author/MySeries/01 - Book.epub")
+    assert updated["series"] == "My Series (Corrected)"
+    assert updated["series_index"] == "1"
+    assert updated["series_total"] == 5

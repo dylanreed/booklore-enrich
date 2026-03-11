@@ -254,6 +254,16 @@ class Database:
         row = self.execute("SELECT * FROM books WHERE file_path = ?", (file_path,)).fetchone()
         return dict(row) if row else None
 
+    def update_book_series(self, book_id: int, series: Optional[str] = None,
+                           series_index: Optional[str] = None,
+                           series_total: Optional[int] = None):
+        """Update series fields on a book (scraped data overwrites filesystem-parsed)."""
+        self.execute(
+            "UPDATE books SET series = ?, series_index = ?, series_total = ? WHERE id = ?",
+            (series, series_index, series_total, book_id),
+        )
+        self.conn.commit()
+
     def mark_embedded(self, book_id: int):
         """Record that a book's EPUB has been written with enriched metadata."""
         self.execute(
