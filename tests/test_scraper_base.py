@@ -40,3 +40,25 @@ def test_parse_book_page_extracts_tags():
     data = parse_book_page(html)
     assert "enemies-to-lovers" in data["tags"]
     assert "slow-burn" in data["tags"]
+
+
+def test_parse_book_page_categorizes_tags():
+    """Tags are returned with categories, not as flat strings."""
+    html = '''
+    <a href="/topics/best/enemies-to-lovers/1">Enemies to Lovers</a>
+    <a href="/topics/best/contemporary/1">Contemporary</a>
+    <a href="/topics/best/alpha-male/1">Alpha Male</a>
+    <a href="/topics/best/competent-heroine/1">Competent Heroine</a>
+    '''
+    result = parse_book_page(html)
+    # Should still have tags list for backwards compat
+    assert len(result["tags"]) > 0
+    # Should also have categorized_tags
+    cats = result["categorized_tags"]
+    names_by_cat = {}
+    for t in cats:
+        names_by_cat.setdefault(t["category"], []).append(t["name"])
+    assert "contemporary" in names_by_cat.get("subgenre", [])
+    assert "enemies-to-lovers" in names_by_cat.get("trope", [])
+    assert "alpha-male" in names_by_cat.get("hero-type", [])
+    assert "competent-heroine" in names_by_cat.get("heroine-type", [])
