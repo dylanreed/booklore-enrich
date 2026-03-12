@@ -64,3 +64,13 @@ def discover(source, genre):
     """Discover new books by trope from romance.io and thebooknaut.com."""
     from booklore_enrich.commands.discover import run_discover
     run_discover(source, genre)
+
+
+@cli.command()
+@click.argument("directory", type=click.Path(exists=True))
+@click.option("--dry-run", is_flag=True, help="Show what would change without writing")
+@click.option("--force", is_flag=True, help="Re-embed already processed books")
+def embed(directory, dry_run, force):
+    """Write cached metadata into EPUB files."""
+    from booklore_enrich.commands.embed import run_embed
+    run_embed(directory=directory, dry_run=dry_run, force=force)

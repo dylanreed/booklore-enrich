@@ -60,3 +60,11 @@ def test_scrape_has_from_dir_option():
     runner = CliRunner()
     result = runner.invoke(cli, ["scrape", "--help"])
     assert "--from-dir" in result.output
+
+
+def test_embed_command_exists():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["embed", "--help"])
+    assert result.exit_code == 0
+    assert "--dry-run" in result.output
+    assert "--force" in result.output
