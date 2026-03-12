@@ -5,9 +5,11 @@ CLI tool that enriches a BookLore digital library with metadata from romance.io 
 
 ## Commands
 - `uv run booklore-enrich export` — export library as CSV
-- `uv run booklore-enrich scrape` — scrape trope metadata
+- `uv run booklore-enrich scrape` — scrape trope metadata (from BookLore API)
+- `uv run booklore-enrich scrape --from-dir /path` — scrape trope metadata (from filesystem)
 - `uv run booklore-enrich tag` — push metadata to BookLore
 - `uv run booklore-enrich discover` — find new books by trope
+- `uv run booklore-enrich embed /path` — write cached metadata into EPUB files
 
 ## Development
 - Python 3.12+, managed with uv
@@ -18,4 +20,4 @@ CLI tool that enriches a BookLore digital library with metadata from romance.io 
 See `docs/plans/2026-02-20-booklore-enrich-design.md`
 
 ## Key Dependencies
-- click (CLI), httpx (HTTP), playwright (scraping), rich (output), sqlite3 (cache)
+- click (CLI), httpx (HTTP), playwright (scraping), rich (output), sqlite3 (cache), ebooklib (EPUB)
