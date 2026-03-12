@@ -1,6 +1,10 @@
 # ABOUTME: Tests for EPUB metadata read/merge/write logic.
 # ABOUTME: Covers author flipping, title, subjects, tags, and series metadata.
 
+import json
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
+
 from ebooklib import epub
 from booklore_enrich.epub_writer import read_epub_metadata, write_epub_metadata
 
@@ -78,3 +82,53 @@ def test_subjects_deduplicated(tmp_path):
     write_epub_metadata(str(path), subjects=["romance", "fantasy"])
     meta = read_epub_metadata(str(path))
     assert meta["subjects"].count("romance") == 1
+
+
+def _read_opf_xml(epub_path):
+    """Extract and parse the OPF XML from an EPUB for custom metadata checks."""
+    with ZipFile(str(epub_path), "r") as zf:
+        for name in zf.namelist():
+            if name.endswith(".opf"):
+                return ET.fromstring(zf.read(name))
+    return None
+
+
+def test_write_booklore_tags(tmp_path):
+    """Tropes/steam/hero types are written as booklore:tags JSON."""
+    path = _make_test_epub(tmp_path / "test.epub")
+    write_epub_metadata(str(path), tags=["enemies-to-lovers", "steam:4", "hero:alpha-male"])
+    opf = _read_opf_xml(path)
+    # Find meta elements with property="booklore:tags" anywhere in the OPF
+    meta_tags = [el for el in opf.iter() if el.get("property") == "booklore:tags"]
+    assert len(meta_tags) == 1, f"Expected exactly 1 booklore:tags element, found {len(meta_tags)}"
+    tags_json = json.loads(meta_tags[0].text)
+    assert "enemies-to-lovers" in tags_json
+    assert "steam:4" in tags_json
+    assert "hero:alpha-male" in tags_json
+
+
+def test_write_series_metadata(tmp_path):
+    """Series name and index are written in both Calibre and EPUB3 formats."""
+    path = _make_test_epub(tmp_path / "test.epub")
+    write_epub_metadata(str(path), series="Hot and Hammered", series_index="1", series_total=3)
+    opf = _read_opf_xml(path)
+    all_meta = list(opf.iter())
+    calibre_series = [el for el in all_meta if el.get("name") == "calibre:series"]
+    assert len(calibre_series) >= 1
+    assert calibre_series[0].get("content") == "Hot and Hammered"
+    calibre_index = [el for el in all_meta if el.get("name") == "calibre:series_index"]
+    assert len(calibre_index) >= 1
+    assert calibre_index[0].get("content") == "1"
+
+
+def test_merge_booklore_tags(tmp_path):
+    """New tags merge with existing booklore:tags."""
+    path = _make_test_epub(tmp_path / "test.epub")
+    write_epub_metadata(str(path), tags=["slow-burn"])
+    write_epub_metadata(str(path), tags=["enemies-to-lovers"])
+    opf = _read_opf_xml(path)
+    meta_tags = [el for el in opf.iter() if el.get("property") == "booklore:tags"]
+    assert len(meta_tags) >= 1
+    tags_json = json.loads(meta_tags[0].text)
+    assert "slow-burn" in tags_json
+    assert "enemies-to-lovers" in tags_json
