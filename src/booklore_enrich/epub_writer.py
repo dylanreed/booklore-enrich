@@ -57,4 +57,15 @@ def write_epub_metadata(
             book.metadata[dc_ns]["creator"] = []
         book.add_author(author)
 
+    if subjects:
+        # Read existing subjects
+        existing = {s[0] for s in book.get_metadata("DC", "subject")}
+        # Clear existing
+        if dc_ns in book.metadata and "subject" in book.metadata[dc_ns]:
+            book.metadata[dc_ns]["subject"] = []
+        # Merge and deduplicate (preserving order: existing first, then new)
+        all_subjects = list(dict.fromkeys(list(existing) + subjects))
+        for subj in all_subjects:
+            book.add_metadata("DC", "subject", subj)
+
     epub.write_epub(file_path, book)

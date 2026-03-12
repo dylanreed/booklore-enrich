@@ -52,3 +52,29 @@ def test_multi_author_not_flipped(tmp_path):
     write_epub_metadata(str(path), author="Margaret Weis, Tracy Hickman")
     meta = read_epub_metadata(str(path))
     assert "Margaret Weis, Tracy Hickman" in meta["authors"]
+
+
+def test_merge_subjects(tmp_path):
+    """New subjects are merged with existing ones."""
+    path = _make_test_epub(tmp_path / "test.epub")
+    # Add initial subject
+    book = epub.read_epub(str(path), {"ignore_ncx": True})
+    book.add_metadata("DC", "subject", "existing-genre")
+    epub.write_epub(str(path), book)
+    # Write new subjects — should merge
+    write_epub_metadata(str(path), subjects=["dark-romance", "contemporary"])
+    meta = read_epub_metadata(str(path))
+    assert "existing-genre" in meta["subjects"]
+    assert "dark-romance" in meta["subjects"]
+    assert "contemporary" in meta["subjects"]
+
+
+def test_subjects_deduplicated(tmp_path):
+    """Duplicate subjects are not written twice."""
+    path = _make_test_epub(tmp_path / "test.epub")
+    book = epub.read_epub(str(path), {"ignore_ncx": True})
+    book.add_metadata("DC", "subject", "romance")
+    epub.write_epub(str(path), book)
+    write_epub_metadata(str(path), subjects=["romance", "fantasy"])
+    meta = read_epub_metadata(str(path))
+    assert meta["subjects"].count("romance") == 1
