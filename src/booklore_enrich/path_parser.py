@@ -92,23 +92,25 @@ def parse_book_path(file_path: str, base_dir: str) -> Optional[Dict[str, str]]:
 def discover_books_from_dir(
     base_dir: str,
     db: Optional[Database] = None,
-    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_status: Optional[Callable[[str], None]] = None,
 ) -> List[Dict]:
     """Walk a directory tree and discover all epub books.
 
     Parses metadata from paths and optionally inserts into the database.
-    on_progress is called with (current, total) after each book is processed.
+    on_status is called with a status message string during processing.
     Returns list of parsed book dicts.
     """
     base = Path(base_dir)
+    if on_status:
+        on_status("Scanning for EPUBs...")
     epub_paths = sorted(base.rglob("*.epub"))
     total = len(epub_paths)
     books = []
     for i, epub_path in enumerate(epub_paths):
+        if on_status and i % 100 == 0:
+            on_status(f"Processing {i + 1}/{total} EPUBs...")
         parsed = parse_book_path(str(epub_path), base_dir)
         if parsed is None:
-            if on_progress:
-                on_progress(i + 1, total)
             continue
         books.append(parsed)
         if db is not None:
@@ -119,6 +121,4 @@ def discover_books_from_dir(
                 series=parsed.get("series"),
                 series_index=parsed.get("series_index"),
             )
-        if on_progress:
-            on_progress(i + 1, total)
     return books

@@ -139,16 +139,11 @@ def run_scrape(source: str = "all", limit: int = 0, from_dir: str | None = None)
             # Filesystem discovery — skip BookLore sync entirely
             from booklore_enrich.path_parser import discover_books_from_dir
             console.print(f"[bold]Discovering books from:[/bold] {from_dir}")
-            with Progress(console=console) as progress:
-                task = None
-
-                def on_discover_progress(current: int, total: int):
-                    nonlocal task
-                    if task is None:
-                        task = progress.add_task("[cyan]Discovering EPUBs...", total=total)
-                    progress.advance(task)
-
-                books = discover_books_from_dir(from_dir, db=db, on_progress=on_discover_progress)
+            with console.status("[cyan]Scanning for EPUBs...") as status:
+                books = discover_books_from_dir(
+                    from_dir, db=db,
+                    on_status=lambda msg: status.update(f"[cyan]{msg}"),
+                )
             console.print(f"Found [green]{len(books)}[/green] epub files")
         else:
             # Existing BookLore API sync path
