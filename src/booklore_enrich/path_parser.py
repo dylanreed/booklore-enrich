@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     from booklore_enrich.db import Database
@@ -89,17 +89,26 @@ def parse_book_path(file_path: str, base_dir: str) -> Optional[Dict[str, str]]:
     }
 
 
-def discover_books_from_dir(base_dir: str, db: Optional[Database] = None) -> List[Dict]:
+def discover_books_from_dir(
+    base_dir: str,
+    db: Optional[Database] = None,
+    on_progress: Optional[Callable[[int, int], None]] = None,
+) -> List[Dict]:
     """Walk a directory tree and discover all epub books.
 
     Parses metadata from paths and optionally inserts into the database.
+    on_progress is called with (current, total) after each book is processed.
     Returns list of parsed book dicts.
     """
     base = Path(base_dir)
+    epub_paths = sorted(base.rglob("*.epub"))
+    total = len(epub_paths)
     books = []
-    for epub_path in sorted(base.rglob("*.epub")):
+    for i, epub_path in enumerate(epub_paths):
         parsed = parse_book_path(str(epub_path), base_dir)
         if parsed is None:
+            if on_progress:
+                on_progress(i + 1, total)
             continue
         books.append(parsed)
         if db is not None:
@@ -110,4 +119,6 @@ def discover_books_from_dir(base_dir: str, db: Optional[Database] = None) -> Lis
                 series=parsed.get("series"),
                 series_index=parsed.get("series_index"),
             )
+        if on_progress:
+            on_progress(i + 1, total)
     return books
