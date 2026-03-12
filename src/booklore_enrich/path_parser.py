@@ -95,8 +95,6 @@ def discover_books_from_dir(base_dir: str, db: Optional[Database] = None) -> Lis
     Parses metadata from paths and optionally inserts into the database.
     Returns list of parsed book dicts.
     """
-    from booklore_enrich.db import Database as _Database  # noqa: F401 (used for type check only)
-
     base = Path(base_dir)
     books = []
     for epub_path in sorted(base.rglob("*.epub")):

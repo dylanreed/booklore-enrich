@@ -156,8 +156,12 @@ def run_scrape(source: str = "all", limit: int = 0, from_dir: str | None = None)
             synced = sync_books_to_cache(db, books)
             console.print(f"  Synced {synced} books.")
 
-        headless = True if from_dir else config.headless
-        rate_limit = 1.0 if from_dir else config.rate_limit_seconds
+        if from_dir:
+            headless = True
+            rate_limit = 1.0
+        else:
+            headless = config.headless
+            rate_limit = config.rate_limit_seconds
 
         sources = [source] if source != "all" else list(SOURCES.keys())
         for src in sources:

@@ -1,7 +1,7 @@
 # ABOUTME: Tests for filesystem path parsing to extract book metadata.
 # ABOUTME: Covers series, standalone, flat, and edge case naming patterns.
 
-from booklore_enrich.path_parser import parse_book_path
+from booklore_enrich.path_parser import flip_author_name, parse_book_path
 
 
 def test_series_with_index():
@@ -62,6 +62,26 @@ def test_returns_none_for_non_epub():
     """Non-epub files return None."""
     result = parse_book_path("/books/Author/book.pdf", "/books")
     assert result is None
+
+
+def test_flip_author_simple():
+    """Simple Last, First flip."""
+    assert flip_author_name("Bailey, Tessa") == "Tessa Bailey"
+
+
+def test_flip_author_multi_word_after_comma():
+    """Last, First Middle flips correctly."""
+    assert flip_author_name("Bujold, Lois McMaster") == "Lois McMaster Bujold"
+
+
+def test_flip_author_no_comma():
+    """Already correct names are unchanged."""
+    assert flip_author_name("Tessa Bailey") == "Tessa Bailey"
+
+
+def test_flip_author_multi_author_unchanged():
+    """Multi-author strings with comma are left as-is."""
+    assert flip_author_name("Margaret Weis, Tracy Hickman") == "Margaret Weis, Tracy Hickman"
 
 
 def test_author_flip_last_first():

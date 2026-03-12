@@ -103,7 +103,7 @@ class Database:
         """Add columns that may be missing from older databases."""
         existing = {row[1] for row in self.execute("PRAGMA table_info(books)").fetchall()}
         # Note: SQLite does not allow ADD COLUMN with UNIQUE constraint.
-        # file_path uniqueness is enforced only on fresh databases via the schema.
+        # We add a UNIQUE INDEX separately after the column is created.
         migrations = [
             ("file_path", "TEXT"),
             ("series", "TEXT"),
@@ -114,6 +114,10 @@ class Database:
         for col_name, col_type in migrations:
             if col_name not in existing:
                 self.execute(f"ALTER TABLE books ADD COLUMN {col_name} {col_type}")
+        # Ensure file_path uniqueness even on migrated databases
+        self.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_books_file_path ON books(file_path)"
+        )
         self.conn.commit()
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:

@@ -65,7 +65,7 @@ def write_epub_metadata(
 
     if subjects:
         # Read existing subjects
-        existing = {s[0] for s in book.get_metadata("DC", "subject")}
+        existing = [s[0] for s in book.get_metadata("DC", "subject")]
         # Clear existing
         if dc_ns in book.metadata and "subject" in book.metadata[dc_ns]:
             book.metadata[dc_ns]["subject"] = []
